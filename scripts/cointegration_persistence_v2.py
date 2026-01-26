@@ -1,4 +1,14 @@
-"GPU-Accelerated Cointegration Persistence V2: Fixed Beta Analysis (Multi-Stream Optimized)\n------------------------------------------------------------------------------------------\n1. Single pass over chronological days.\n2. Uses CUDA Streams to compute windows [14, 30, 90] in PARALLEL on the GPU for each day.\n3. Minimizes CPU-GPU synchronization points.\n\nPerformance:\n- Reduced index lookups (3x -> 1x).\n- Overlapped Kernel Execution via Streams.\n"
+"""
+GPU-Accelerated Cointegration Persistence V2: Fixed Beta Analysis (Multi-Stream Optimized)
+------------------------------------------------------------------------------------------
+1. Single pass over chronological days.
+2. Uses CUDA Streams to compute windows [14, 30, 90] in PARALLEL on the GPU for each day.
+3. Minimizes CPU-GPU synchronization points.
+
+Performance:
+- Reduced index lookups (3x -> 1x).
+- Overlapped Kernel Execution via Streams.
+"""
 
 import cudf
 import cupy as cp
@@ -137,7 +147,7 @@ def main():
         idx_day_t1_end = date_to_idx[day_t1][1]
         
         # Holder for current day's GPU arrays
-        gpu_results = {}
+        gpu_results = {} 
         
         # --- LAUNCH KERNELS (Parallel Dispatch) ---
         for w_size in WINDOW_SIZES:
@@ -172,9 +182,12 @@ def main():
                 
                 # 3. Test on T+1 (Fixed Beta)
                 scores_t1 = compute_adf_stats(data_t1, beta, alpha)
+
+                # 4. Train on T+1 (Optimal Beta)
+                beta_t1, alpha_t1 = get_ols_params(data_t1)
                 
                 # Store GPU arrays
-                gpu_results[w_size] = (scores_t, scores_t1, beta)
+                gpu_results[w_size] = (scores_t, scores_t1, beta, beta_t1)
 
         # --- SYNCHRONIZE & COPY BACK (Sequential) ---
         # We assume all streams launched. Now we gather.
@@ -184,7 +197,7 @@ def main():
             res = gpu_results.get(w_size)
             if res is None: continue
             
-            scores_t_gpu, scores_t1_gpu, beta_gpu = res
+            scores_t_gpu, scores_t1_gpu, beta_gpu, beta_t1_gpu = res
             
             # Explicit sync not strictly needed if using same stream context, 
             # but asnumpy handles it.
@@ -194,6 +207,7 @@ def main():
             h_scores_t = cp.asnumpy(scores_t_gpu)
             h_scores_t1 = cp.asnumpy(scores_t1_gpu)
             h_beta = cp.asnumpy(beta_gpu)
+            h_beta_t1 = cp.asnumpy(beta_t1_gpu)
             
             # --- CPU Filtering ---
             sig_indices = np.argwhere(h_scores_t < CRIT_5PCT)
@@ -205,6 +219,7 @@ def main():
                     'y': pairs[r],
                     'x': pairs[c],
                     'beta': float(h_beta[r, c]),
+                    'beta_next': float(h_beta_t1[r, c]),
                     'score': float(h_scores_t[r, c]),
                     'score_next_day': float(h_scores_t1[r, c])
                 })
