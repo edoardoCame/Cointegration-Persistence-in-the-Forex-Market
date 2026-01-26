@@ -55,7 +55,7 @@ def load_all_data_gpu(data_dir: Path) -> cudf.DataFrame:
 
     Returns a time-indexed DataFrame with one column per asset.
     """
-    files = sorted(list(data_dir.glob("*-m1-*.csv")))
+    files = sorted(list(data_dir.glob("DAT_ASCII_*.csv")))
     if not files:
         raise ValueError(f"No data files found in {data_dir}")
     
@@ -63,13 +63,38 @@ def load_all_data_gpu(data_dir: Path) -> cudf.DataFrame:
     print(f"Reading {len(files)} files...")
     
     for f in tqdm(files, desc="Loading CSVs"):
-        pair_name = f.name.split('-m1-')[0]
+        # Filename example: DAT_ASCII_AUDCAD_M1_2025.csv
+        try:
+            pair_name = f.name.split('_')[2].lower()
+        except IndexError:
+            # Fallback or skip if filename doesn't match expected pattern
+            print(f"Skipping file with unexpected name format: {f.name}")
+            continue
+
         # Read minimal columns for speed / memory; enforce dtypes
-        df = cudf.read_csv(
-            f,
-            usecols=['timestamp', 'close'],
-            dtype={'timestamp': 'int64', 'close': 'float32'}
-        )
+        # Format: Date Time;Open;High;Low;Close;Volume
+        # We need col 0 (DateTime) and col 4 (Close)
+        try:
+            df = cudf.read_csv(
+                f,
+                sep=';',
+                header=None,
+                names=['dt_str', 'open', 'high', 'low', 'close', 'vol'],
+                usecols=['dt_str', 'close'],
+                dtype={'dt_str': 'str', 'close': 'float32'}
+            )
+        except Exception as e:
+            print(f"Error reading {f.name}: {e}")
+            continue
+
+        # Convert string datetime to actual datetime objects
+        # Format in CSV: 20250101 170400
+        df['timestamp'] = cudf.to_datetime(df['dt_str'], format='%Y%m%d %H%M%S')
+        
+        # Drop duplicates to ensure unique index
+        df = df.drop_duplicates(subset=['timestamp'], keep='first')
+
+        df = df.drop(columns=['dt_str'])
         df = df.rename(columns={'close': pair_name})
         df = df.set_index('timestamp')
         frames.append(df)
@@ -83,8 +108,7 @@ def load_all_data_gpu(data_dir: Path) -> cudf.DataFrame:
     # Small gaps can occur due to market microstructure; fill conservatively
     prices = prices.ffill().bfill()
     
-    # Convert index to datetime once
-    prices.index = cudf.to_datetime(prices.index, unit='ms')
+    # Index is already datetime, no conversion needed
     
     return prices
 

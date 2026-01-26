@@ -15,7 +15,10 @@ A high-performance pipeline to compute Engle–Granger cointegration statistics 
 
 ## Data & Preprocessing
 
-- **Input format:** CSVs named like `eurusd-m1-YYYY-MM-DD-to-YYYY-MM-DD.csv` with columns: `timestamp` (ms since epoch) and `close`.
+- **Input format:** CSVs named like `DAT_ASCII_EURUSD_M1_2025.csv`.
+- **File Structure:** Semicolon-separated (`;`), no header row.
+- **Columns:** DateTime (`YYYYMMDD HHMMSS`), Open, High, Low, Close, Volume.
+- **Processing:** The script parses the DateTime column into timestamps and uses the Close price.
 - **Alignment:** Files are merged on `timestamp` (index). We apply forward-fill then backward-fill to handle microstructure gaps conservatively.
 - **Dtypes:** Prices are cast to `float32` to reduce GPU memory footprint.
 
@@ -189,5 +192,5 @@ Each daily entry:
 
 - `cointegration_analysis.py` — GPU pipeline to compute daily rolling EG scores and save results.
 - `cointegration_analysis.ipynb` — Visual analytics, heatmaps, persistence, and animation.
-- `data/` — Input CSVs (timestamp ms + close).
+- `data/` — Input CSVs (`DAT_ASCII` format).
 - `results/` — Saved pickle with daily results.
