@@ -16,7 +16,7 @@ Outputs:
     and a 5% significance flag (MacKinnon critical value).
 
 Notes:
-- This module uses TLS instead of OLS for robustness (minimizes orthogonal distance).
+- This module uses OLS (Ordinary Least Squares) for cointegration estimation.
 - Prints give a concise progress readout; logging can be added if needed.
 """
 
@@ -112,19 +112,18 @@ def load_all_data_gpu(data_dir: Path) -> cudf.DataFrame:
     
     return prices
 
-def get_tls_params(data_cp: cp.ndarray):
+def get_ols_params(data_cp: cp.ndarray):
     """
-    Compute TLS (Total Least Squares) parameters via vectorized eigenvalue decomposition.
+    Compute OLS (Ordinary Least Squares) parameters vectorized.
     
-    For each regression (y_i on x_j), computes the minimum eigenvector of the 2x2 
-    covariance matrix [[var_y, cov_yx], [cov_yx, var_x]] to find the best-fit line
-    that minimizes orthogonal distance (not OLS residuals).
+    For each regression (y_i = alpha_ij + beta_ij * x_j + eps), computes:
+    beta_ij = Cov(y_i, x_j) / Var(x_j)
     
     FULLY VECTORIZED: No explicit loops. All pairs computed simultaneously on GPU.
     
     Returns:
-    - beta: (N, N) matrix of TLS slopes
-    - alpha: (N, N) matrix of TLS intercepts
+    - beta: (N, N) matrix of OLS slopes (beta[i, j] is slope of y_i on x_j)
+    - alpha: (N, N) matrix of OLS intercepts
     """
     T, N = data_cp.shape
     
@@ -132,39 +131,25 @@ def get_tls_params(data_cp: cp.ndarray):
     centered = data_cp - means
     
     # Build full covariance matrix (N, N)
+    # cov[i, j] is covariance between asset i and asset j
     cov = cp.dot(centered.T, centered) / (T - 1)
-    diag_cov = cp.diag(cov)  # (N,) - diagonal variance vector
     
-    # Broadcasting: For pair (i, j):
-    #   a[i, j] = var(y_i) = cov[i, i]
-    #   b[i, j] = var(x_j) = cov[j, j]
-    #   c[i, j] = cov(y_i, x_j) = cov[i, j]
-    a = diag_cov[:, None]  # (N, 1) broadcasts to (N, N)
-    b = diag_cov[None, :]  # (1, N) broadcasts to (N, N)
-    c = cov  # (N, N)
+    # Variance of X (asset j) is on the diagonal
+    var_x = cp.diag(cov) # (N,)
     
-    # For 2x2 matrix [[a, c], [c, b]], compute minimum eigenvalue using closed form:
-    # trace = a + b
-    # det = a*b - c^2
-    # lambda_min = (trace - sqrt(trace^2 - 4*det)) / 2
-    #           = (a + b)/2 - sqrt(((a-b)/2)^2 + c^2)
+    # Beta matrix: beta[i, j] = cov[i, j] / var_x[j]
+    # We need to broadcast var_x correctly. 
+    # var_x[None, :] creates a row vector (1, N), broadcasting across rows.
+    # This divides column j of cov by var_x[j].
     
-    trace = a + b
-    srt = cp.sqrt(((a - b) / 2)**2 + c * c)
-    lambda_min = trace / 2 - srt
+    beta = cov / (var_x[None, :] + 1e-10)
     
-    # Eigenvector for lambda_min: [c, lambda_min - a]
-    v0 = c
-    v1 = lambda_min - a
-    
-    # TLS slope: beta = -v0 / v1 (where v = [v0, v1])
-    # Avoid division by zero
-    beta = cp.where(cp.abs(v1) > 1e-10, -v0 / v1, 0.0)
-    
-    # Set diagonal to 1.0 (identity regression)
+    # Set diagonal to 1.0 (identity regression y_i = 1.0 * y_i)
     cp.fill_diagonal(beta, 1.0)
     
-    # Intercept: alpha = mean_y - beta * mean_x
+    # Intercept: alpha_ij = mean_i - beta_ij * mean_j
+    # means[:, None] is (N, 1) -> mean_i
+    # means[None, :] is (1, N) -> mean_j
     alpha = means[:, None] - beta * means[None, :]
     
     return beta, alpha
@@ -172,7 +157,7 @@ def get_tls_params(data_cp: cp.ndarray):
 def vectorized_eg_test(data_cp: cp.ndarray) -> cp.ndarray:
     """
     Compute Engle–Granger residual-based ADF t-statistics for all ordered pairs.
-    Uses Total Least Squares (TLS) instead of OLS for cointegration estimation.
+    Uses Ordinary Least Squares (OLS) for cointegration estimation.
 
     Parameters
     ----------
@@ -189,8 +174,8 @@ def vectorized_eg_test(data_cp: cp.ndarray) -> cp.ndarray:
     if T < 10:
         return cp.full((N, N), cp.nan)
 
-    # 1) TLS parameters via SVD
-    beta, alpha = get_tls_params(data_cp)
+    # 1) OLS parameters
+    beta, alpha = get_ols_params(data_cp)
     
     t_stats = cp.zeros((N, N), dtype=cp.float32)
     

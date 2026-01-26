@@ -55,25 +55,20 @@ def load_all_data_gpu(data_dir: Path) -> cudf.DataFrame:
     df_all = cudf.concat(frames, axis=1).sort_index().ffill().bfill()
     return df_all
 
-def get_tls_params(data_cp: cp.ndarray):
-    """Compute TLS beta/alpha vectorized."""
+def get_ols_params(data_cp: cp.ndarray):
+    """Compute OLS beta/alpha vectorized."""
     T, N = data_cp.shape
     means = data_cp.mean(axis=0)
     centered = data_cp - means
     cov = cp.dot(centered.T, centered) / (T - 1)
-    diag_cov = cp.diag(cov)
     
-    a = diag_cov[:, None]
-    b = diag_cov[None, :]
-    c = cov
+    # Variance of X (denominator) is on the diagonal
+    var_x = cp.diag(cov)
     
-    trace = a + b
-    srt = cp.sqrt(((a - b) / 2)**2 + c * c)
-    lambda_min = trace / 2 - srt
+    # Beta_ij = Cov(i, j) / Var(j)
+    # Broadcast var_x across rows (so each col j is divided by var_j)
+    beta = cov / (var_x[None, :] + 1e-10)
     
-    v0 = c
-    v1 = lambda_min - a
-    beta = cp.where(cp.abs(v1) > 1e-10, -v0 / v1, 0.0)
     cp.fill_diagonal(beta, 1.0)
     alpha = means[:, None] - beta * means[None, :]
     return beta, alpha
@@ -113,18 +108,11 @@ def compute_adf_score(data_cp: cp.ndarray, beta: cp.ndarray, alpha: cp.ndarray):
 # --- Numba Trading Logic ---
 
 @jit(nopython=True)
-def backtest_intraday(prices_y, prices_x, beta, mean, std, capital):
+def backtest_intraday(prices_y, prices_x, beta, mean, std, capital, trade_buffer):
     """
-    Simulates intraday trading with 1-bar lag execution.
-    Prices are minute closes.
-    Strategy:
-    1. Calc Z-score at t.
-    2. Generate Signal at t.
-    3. Execute Trade at t+1 (using Close[t+1]).
-    
-    Position Logic:
-    - Long Spread: Buy Y, Sell X (Beta adjusted).
-    - Short Spread: Sell Y, Buy X.
+    Simulates intraday trading.
+    trade_buffer: array of shape (MAX_TRADES, 4) -> [direction, entry_idx, exit_idx, pnl]
+    Returns: pnl_accum, num_trades
     """
     n = len(prices_y)
     
@@ -136,8 +124,12 @@ def backtest_intraday(prices_y, prices_x, beta, mean, std, capital):
     qty_x = 0.0
     entry_cash_balance = 0.0
     
+    # Trade Tracking
+    entry_idx = -1
+    
     pnl_accum = 0.0
-    trades = 0
+    trades_count = 0
+    max_trades_log = trade_buffer.shape[0]
     
     # Pending Orders (for next bar execution)
     next_action = 0 # 0: None, 1: Enter Long, -1: Enter Short, 2: Close
@@ -151,14 +143,6 @@ def backtest_intraday(prices_y, prices_x, beta, mean, std, capital):
         if next_action != 0:
             if next_action == 2: # Close
                 # Close current position
-                # If Long Spread (Pos 1): Sell Y, Buy X
-                # If Short Spread (Pos -1): Buy Y, Sell X
-                
-                # Cash Change = Proceeds - Cost
-                # We held qty_y and qty_x. 
-                # Note: qty_x is negative if we shorted it? No, keep qtys positive and track direction with `position`.
-                # Let's keep qtys as absolute numbers.
-                
                 cash_flow = 0.0
                 if position == 1: 
                     # Closing Long Spread: Sell Y (+), Buy X (-)
@@ -167,32 +151,30 @@ def backtest_intraday(prices_y, prices_x, beta, mean, std, capital):
                     # Closing Short Spread: Buy Y (-), Sell X (+)
                     cash_flow = -(qty_y * price_y) + (qty_x * price_x)
                 
-                # Net PnL for this trade = Entry Cash Flow + Exit Cash Flow
-                pnl_accum += (entry_cash_balance + cash_flow)
+                trade_pnl = entry_cash_balance + cash_flow
+                pnl_accum += trade_pnl
+                
+                # Log Trade
+                if trades_count < max_trades_log:
+                    trade_buffer[trades_count, 0] = position
+                    trade_buffer[trades_count, 1] = entry_idx
+                    trade_buffer[trades_count, 2] = i
+                    trade_buffer[trades_count, 3] = trade_pnl
+                    trades_count += 1
                 
                 # Reset
                 position = 0
                 qty_y = 0.0
                 qty_x = 0.0
                 entry_cash_balance = 0.0
+                entry_idx = -1
                 
             elif next_action == 1: # Enter Long Spread
                 if position == 0:
                     position = 1
-                    trades += 1
-                    # Buy Y ($10k), Sell X ($10k) - Dollar Neutral-ish
-                    # Actually user said "Equal Weight".
-                    # Let's do fixed notional per leg based on capital.
-                    # Capital = 20k. Split 10k Y, 10k X?
-                    # Hedge Ratio constraint: Q_y / Q_x = 1 / Beta  => Q_x = Q_y * Beta
-                    # Value_Y = Q_y * P_y. Value_X = Q_x * P_x.
-                    # We want roughly similar exposure?
-                    # Let's stick to standard pairs trading:
-                    # Unit: 1 Y - Beta X.
-                    # Determine unit size based on Capital.
-                    # Let's say we allocate 'capital' (20k) to the long leg.
+                    entry_idx = i
                     
-                    target_val = capital / 2.0 # 10k
+                    target_val = capital / 2.0 
                     qty_y = target_val / price_y
                     qty_x = qty_y * beta
                     
@@ -202,7 +184,7 @@ def backtest_intraday(prices_y, prices_x, beta, mean, std, capital):
             elif next_action == -1: # Enter Short Spread
                  if position == 0:
                     position = -1
-                    trades += 1
+                    entry_idx = i
                     
                     target_val = capital / 2.0
                     qty_y = target_val / price_y
@@ -246,9 +228,18 @@ def backtest_intraday(prices_y, prices_x, beta, mean, std, capital):
              cash_flow = (qty_y * prices_y[n-1]) - (qty_x * prices_x[n-1])
         elif position == -1:
              cash_flow = -(qty_y * prices_y[n-1]) + (qty_x * prices_x[n-1])
-        pnl_accum += (entry_cash_balance + cash_flow)
+        
+        trade_pnl = entry_cash_balance + cash_flow
+        pnl_accum += trade_pnl
+        
+        if trades_count < max_trades_log:
+            trade_buffer[trades_count, 0] = position
+            trade_buffer[trades_count, 1] = entry_idx
+            trade_buffer[trades_count, 2] = n-1
+            trade_buffer[trades_count, 3] = trade_pnl
+            trades_count += 1
 
-    return pnl_accum, trades
+    return pnl_accum, trades_count
 
 # --- Main Execution ---
 
@@ -275,6 +266,8 @@ def main():
     
     total_pnl = 0.0
     daily_stats = []
+    all_trades_log = []
+    daily_betas_log = []
     
     for current_date in tqdm(sim_dates, desc="Backtesting Days"):
         # Define Lookback Window: [T-90, T-1]
@@ -300,7 +293,7 @@ def main():
         train_data = data_matrix[idx_start:idx_end]
         
         # --- Morning Analysis (GPU) ---
-        beta_mat, alpha_mat = get_tls_params(train_data)
+        beta_mat, alpha_mat = get_ols_params(train_data)
         adf_stats = compute_adf_score(train_data, beta_mat, alpha_mat)
         
         # Extract Results to CPU
@@ -354,6 +347,17 @@ def main():
                 'std': std_spread
             })
             
+            # Log Daily Beta
+            daily_betas_log.append({
+                'date': current_date,
+                'pair_y': pair_y,
+                'pair_x': pair_x,
+                'beta': beta,
+                'adf_score': score,
+                'spread_mean': mean_spread,
+                'spread_std': std_spread
+            })
+            
         # --- Intraday Trading (CPU Loop) ---
         # Get data for the specific day
         day_mask = (timestamps >= current_date) & (timestamps < (current_date + timedelta(days=1)))
@@ -370,17 +374,49 @@ def main():
         day_pnl = 0.0
         day_trades = 0
         
+        trade_buffer = np.zeros((1000, 4), dtype=np.float64) # Buffer for Numba
+        
         for p in selected_pairs_info:
             prices_y = day_data_cpu[:, p['y_idx']]
             prices_x = day_data_cpu[:, p['x_idx']]
             
-            pnl, trades = backtest_intraday(
+            # Reset buffer
+            trade_buffer[:] = 0.0
+            
+            pnl, trades_count = backtest_intraday(
                 prices_y, prices_x, 
                 p['beta'], p['mean'], p['std'], 
-                CAPITAL_PER_PAIR
+                CAPITAL_PER_PAIR,
+                trade_buffer
             )
             day_pnl += pnl
-            day_trades += trades
+            day_trades += trades_count
+            
+            # Extract trades from buffer
+            if trades_count > 0:
+                for t_i in range(trades_count):
+                    # trade_buffer row: [direction, entry_idx, exit_idx, pnl]
+                    direction = trade_buffer[t_i, 0]
+                    entry_idx = int(trade_buffer[t_i, 1])
+                    exit_idx = int(trade_buffer[t_i, 2])
+                    t_pnl = trade_buffer[t_i, 3]
+                    
+                    # Convert minute indices to approximate times
+                    # Ideally we would map back to timestamps, but simple offset is ok for now
+                    # We know start of day is current_date
+                    entry_time = current_date + timedelta(minutes=entry_idx)
+                    exit_time = current_date + timedelta(minutes=exit_idx)
+                    
+                    all_trades_log.append({
+                        'date': current_date,
+                        'pair_y': p['pair_y'],
+                        'pair_x': p['pair_x'],
+                        'direction': 'Long Spread' if direction == 1 else 'Short Spread',
+                        'entry_time': entry_time,
+                        'exit_time': exit_time,
+                        'beta': p['beta'],
+                        'pnl': t_pnl
+                    })
             
         total_pnl += day_pnl
         
@@ -398,6 +434,11 @@ def main():
     if not res_df.empty:
         res_df.set_index('date', inplace=True)
         res_df.to_csv("pairs_trading/backtest_results.csv")
+        
+        # Save detailed logs
+        pd.DataFrame(all_trades_log).to_csv("pairs_trading/detailed_trades.csv", index=False)
+        pd.DataFrame(daily_betas_log).to_csv("pairs_trading/daily_betas.csv", index=False)
+        
         logger.info("\n=== Final Results ===")
         logger.info(f"Total PnL: {total_pnl:.2f}")
         logger.info(f"Total Trades: {res_df['trades'].sum()}")
