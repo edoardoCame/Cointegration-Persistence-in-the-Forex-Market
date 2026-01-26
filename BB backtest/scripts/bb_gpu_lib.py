@@ -30,21 +30,32 @@ def bb_batch_grid_search_kernel(prices, window_indices, lookbacks, std_mults, co
     s2 = 0.0
     # Warmup
     for i in range(start_idx, start_idx + lb):
-        val = prices[i]
+        if prices.ndim == 2:
+            val = prices[w_idx, i]
+        else:
+            val = prices[i]
         s1 += val
         s2 += val * val
         
     for i in range(start_idx + 1, end_idx):
-        price = prices[i]
-        prev_price = prices[i-1]
+        if prices.ndim == 2:
+            price = prices[w_idx, i]
+            prev_price = prices[w_idx, i-1]
+        else:
+            price = prices[i]
+            prev_price = prices[i-1]
         
         if current_pos == 1: total_ret += (price - prev_price)
         elif current_pos == -1: total_ret += (prev_price - price)
         
         if i >= start_idx + lb - 1:
             if i > start_idx + lb - 1:
-                old_val = prices[i - lb]
-                new_val = price
+                if prices.ndim == 2:
+                    old_val = prices[w_idx, i - lb]
+                    new_val = price
+                else:
+                    old_val = prices[i - lb]
+                    new_val = price
                 s1 += (new_val - old_val)
                 s2 += (new_val * new_val - old_val * old_val)
             
@@ -98,7 +109,7 @@ def bb_mc_oos_kernel(all_paths, best_lbs, best_sms, commission, split_idx, oos_g
         s1 += val
         s2 += val * val
         
-    for i in range(1, n_samples):
+    for i in range(lb, n_samples):
         price = all_paths[path_idx, i]
         prev_price = all_paths[path_idx, i-1]
         ret = (price - prev_price) if current_pos == 1 else (prev_price - price) if current_pos == -1 else 0.0

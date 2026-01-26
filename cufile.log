@@ -274,3 +274,57 @@
 
  26-01-2026 23:40:36:186 [pid=49019 tid=49019] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
  26-01-2026 23:40:36:186 [pid=49019 tid=49019] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:47:02:122 [pid=55522 tid=55522] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:47:02:123 [pid=55522 tid=55522] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:47:02:123 [pid=55522 tid=55522] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:47:02:123 [pid=55522 tid=55522] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:47:43:997 [pid=56464 tid=56464] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:47:43:997 [pid=56464 tid=56464] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:47:43:997 [pid=56464 tid=56464] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:47:43:997 [pid=56464 tid=56464] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:48:23:429 [pid=57107 tid=57107] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:48:23:430 [pid=57107 tid=57107] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:48:23:430 [pid=57107 tid=57107] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:48:23:430 [pid=57107 tid=57107] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:48:54:228 [pid=57633 tid=57633] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:48:54:228 [pid=57633 tid=57633] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:48:54:228 [pid=57633 tid=57633] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:48:54:228 [pid=57633 tid=57633] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:53:23:529 [pid=60902 tid=60902] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:53:23:529 [pid=60902 tid=60902] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:53:23:529 [pid=60902 tid=60902] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:53:23:529 [pid=60902 tid=60902] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:53:34:418 [pid=61095 tid=61095] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:53:34:418 [pid=61095 tid=61095] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:53:34:418 [pid=61095 tid=61095] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:53:34:418 [pid=61095 tid=61095] NOTICE  cufio-drv:720 running in compatible mode
+ 26-01-2026 23:58:39:168 [pid=63375 tid=63375] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 26-01-2026 23:58:39:168 [pid=63375 tid=63375] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 26-01-2026 23:58:39:168 [pid=63375 tid=63375] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 26-01-2026 23:58:39:168 [pid=63375 tid=63375] NOTICE  cufio-drv:720 running in compatible mode
+ 27-01-2026 00:03:05:28 [pid=66702 tid=66702] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 27-01-2026 00:03:05:28 [pid=66702 tid=66702] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 27-01-2026 00:03:05:28 [pid=66702 tid=66702] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 27-01-2026 00:03:05:28 [pid=66702 tid=66702] NOTICE  cufio-drv:720 running in compatible mode
+ 27-01-2026 00:06:18:105 [pid=69014 tid=69014] ERROR  0:140 unable to load,  liburcu-bp.so.6 
+
+ 27-01-2026 00:06:18:105 [pid=69014 tid=69014] ERROR  0:140 unable to load,  liburcu-bp.so.1 
+
+ 27-01-2026 00:06:18:105 [pid=69014 tid=69014] WARN   0:172 failed to open /proc/driver/nvidia-fs/devcount  error: No such file or directory
+ 27-01-2026 00:06:18:105 [pid=69014 tid=69014] NOTICE  cufio-drv:720 running in compatible mode

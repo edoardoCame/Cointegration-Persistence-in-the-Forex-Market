@@ -27,11 +27,13 @@ def run_montecarlo_sim(pq_path, batch_size=1000):
     
     print(f"Starting Monte Carlo Simulation on {n_total_paths} paths...")
     
-    lookbacks = np.arange(1000, 20001, 2000).astype(np.float64)
-    std_mults = np.arange(1.5, 5.1, 0.25).astype(np.float64)
+    lookbacks = np.arange(60, 20001, 1000).astype(np.float64)
+    std_mults = np.arange(1.5, 7.1, 0.25).astype(np.float64)
     commission = 0.5 * 0.0001
     
     all_oos_pips = []
+    all_best_lbs = []
+    all_best_sms = []
     start_total = time.time()
     
     pbar = tqdm(range(0, n_total_paths, batch_size), desc="MC Simulation")
@@ -40,11 +42,13 @@ def run_montecarlo_sim(pq_path, batch_size=1000):
         actual_batch_size = len(batch_cols)
         pbar.set_postfix({"batch": i//batch_size + 1, "paths": i + actual_batch_size})
         
+        pbar.set_description(f"Batch {i//batch_size + 1}: Load Data")
         df_batch = cudf.read_parquet(pq_path, columns=batch_cols)
         split_idx = int(len(df_batch) * 0.7)
         all_paths_gpu = cp.stack([df_batch[c].values for c in batch_cols])
         
         # Grid Search
+        pbar.set_description(f"Batch {i//batch_size + 1}: Grid Search GPU")
         d_win_indices = cuda.to_device(np.array([[0, split_idx]] * actual_batch_size))
         d_results = cuda.device_array((actual_batch_size, len(lookbacks), len(std_mults), 2), dtype=np.float64)
         bb_batch_grid_search_kernel[(actual_batch_size, len(lookbacks)), len(std_mults)](
@@ -53,21 +57,25 @@ def run_montecarlo_sim(pq_path, batch_size=1000):
         cuda.synchronize()
         
         # Best Params
+        pbar.set_description(f"Batch {i//batch_size + 1}: Best Params CPU")
         batch_results = d_results.copy_to_host()
         best_lbs, best_sms = [], []
-        for p in range(actual_batch_size):
+        for p in tqdm(range(actual_batch_size), desc="  Processing paths", leave=False):
             res = batch_results[p]
             masked_ret = np.where(res[:,:,1] >= 20, res[:,:,0], -1e9)
             idx = np.unravel_index(np.argmax(masked_ret), masked_ret.shape)
             best_lbs.append(lookbacks[idx[0]]); best_sms.append(std_mults[idx[1]])
             
         # OOS
+        pbar.set_description(f"Batch {i//batch_size + 1}: OOS GPU")
         d_oos_gains = cuda.device_array(actual_batch_size, dtype=np.float64)
         bb_mc_oos_kernel[actual_batch_size, 1](
             all_paths_gpu, cuda.to_device(np.array(best_lbs)), cuda.to_device(np.array(best_sms)), commission, split_idx, d_oos_gains
         )
         cuda.synchronize()
         all_oos_pips.extend((d_oos_gains.copy_to_host() / 0.0001).tolist())
+        all_best_lbs.extend(best_lbs)
+        all_best_sms.extend(best_sms)
         
         del df_batch, all_paths_gpu, d_results, d_oos_gains
         cp._default_memory_pool.free_all_blocks()
@@ -77,6 +85,22 @@ def run_montecarlo_sim(pq_path, batch_size=1000):
     os.makedirs(res_dir, exist_ok=True)
     all_oos_pips = np.array(all_oos_pips)
     
+    # 3D Scatter Plot (Parameters vs OOS)
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    x = np.array(all_best_lbs)
+    y = np.array(all_best_sms)
+    z = all_oos_pips
+    sc = ax.scatter(x, y, z, c=z, cmap='RdYlGn', marker='o', alpha=0.6)
+    ax.set_xlabel('Lookback')
+    ax.set_ylabel('Std Dev')
+    ax.set_zlabel('OOS Net Pips')
+    ax.set_title(f'OOS Performance vs Optimal Parameters ({n_total_paths} paths)')
+    fig.colorbar(sc, label='Net Pips')
+    plt.savefig(f"{res_dir}/oos_3d_params.png")
+    plt.close()
+
     plt.figure(figsize=(10, 6))
     plt.hist(all_oos_pips, bins=50, color='teal', alpha=0.7, edgecolor='black')
     plt.axvline(np.median(all_oos_pips), color='red', linestyle='--', label=f'Median: {np.median(all_oos_pips):.1f}')

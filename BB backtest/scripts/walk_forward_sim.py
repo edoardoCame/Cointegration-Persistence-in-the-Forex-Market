@@ -28,7 +28,7 @@ def run_walk_forward():
                    for i in range(train_size, len(week_bounds))]
     
     # Params
-    lookbacks = np.arange(30, 20001, 300).astype(np.float64)
+    lookbacks = np.arange(60, 20001, 300).astype(np.float64)
     std_mults = np.arange(1.5, 8.1, 0.25).astype(np.float64)
     commission = 0.5 * 0.0001
     
