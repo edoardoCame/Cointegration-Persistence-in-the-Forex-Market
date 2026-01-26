@@ -1,5 +1,0 @@
-Monte Carlo Batched Results (10000 paths)
-Tempo totale: 289.99s
-Mean OOS Gain: 44.55 pips
-Positive Outcomes: 64.6%Worst Case: -984.90 pips
-Best Case: 767.90 pips

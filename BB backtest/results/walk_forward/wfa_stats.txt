@@ -1,0 +1,4 @@
+Walk-Forward Analysis Results
+Total OOS Profit: 527.90 pips
+Windows: 40
+Train: 12 weeks, Test: 1 week
