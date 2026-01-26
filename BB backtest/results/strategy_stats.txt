@@ -1,0 +1,13 @@
+Strategy Statistics (EURGBP 2025)
+Parameters: Lookback=2000, Std=1.80
+Commission: 1.0 pips round-trip
+------------------------------
+IN-SAMPLE (Optimization):
+  Total Return: 0.027280 (272.8 pips)
+  Total Trades: 212
+  Avg Profit per Trade: 1.29 pips
+------------------------------
+OUT-OF-SAMPLE (Validation):
+  Total Return: 0.033080 (330.8 pips)
+  Total Trades: 94
+  Avg Profit per Trade: 3.52 pips

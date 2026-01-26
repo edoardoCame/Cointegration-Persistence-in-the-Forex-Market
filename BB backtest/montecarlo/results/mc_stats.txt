@@ -1,0 +1,5 @@
+Monte Carlo Batch Optimized Results (100 paths)
+Tempo esecuzione Kernel: 2.63s
+Mean OOS Gain: 25.92 pips
+Positive Outcomes: 61.0%Worst Case: -884.93 pips
+Best Case: 492.87 pips
