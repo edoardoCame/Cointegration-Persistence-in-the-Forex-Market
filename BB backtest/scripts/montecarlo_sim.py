@@ -29,7 +29,7 @@ def run_montecarlo_sim(pq_path, batch_size=1000):
     
     lookbacks = np.arange(60, 20001, 1000).astype(np.float64)
     std_mults = np.arange(1.5, 7.1, 0.25).astype(np.float64)
-    commission = 0.5 * 0.0001
+    commission = 0.75 * 0.0001
     
     all_oos_pips = []
     all_best_lbs = []
