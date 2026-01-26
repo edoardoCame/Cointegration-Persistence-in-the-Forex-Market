@@ -75,4 +75,15 @@ def generate_weekly_bootstrap(input_path, output_path, n_paths=100):
 if __name__ == "__main__":
     input_csv = "data/DAT_ASCII_EURGBP_M1_2025.csv"
     output_pq = "BB backtest/montecarlo/bootstrap_paths.parquet"
-    generate_weekly_bootstrap(input_csv, output_pq)
+    
+    try:
+        user_input = input("Enter number of paths to generate [default 100]: ").strip()
+        n_paths = int(user_input) if user_input else 100
+    except ValueError:
+        print("Invalid input. Using default: 100")
+        n_paths = 100
+
+    if os.path.exists(output_pq):
+        print(f"Warning: {output_pq} already exists and will be overwritten.")
+    
+    generate_weekly_bootstrap(input_csv, output_pq, n_paths)
