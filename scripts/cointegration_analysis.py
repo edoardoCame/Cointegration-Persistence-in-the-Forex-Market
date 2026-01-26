@@ -8,7 +8,7 @@ Purpose:
 
 Tech:
 - RAPIDS `cudf` for fast CSV I/O and column-wise joins on GPU
-- `cupy` to vectorize OLS + residual ADF test for all pair combinations
+- `cupy` to vectorize TLS (Total Least Squares) + residual ADF test for all pair combinations
 
 Outputs:
 - A list (per day) of pairwise results saved to results/daily_cointegration_results_gpu.pkl
@@ -16,7 +16,7 @@ Outputs:
     and a 5% significance flag (MacKinnon critical value).
 
 Notes:
-- This module focuses on clarity and performance without changing behavior.
+- This module uses TLS instead of OLS for robustness (minimizes orthogonal distance).
 - Prints give a concise progress readout; logging can be added if needed.
 """
 
@@ -112,9 +112,67 @@ def load_all_data_gpu(data_dir: Path) -> cudf.DataFrame:
     
     return prices
 
+def get_tls_params(data_cp: cp.ndarray):
+    """
+    Compute TLS (Total Least Squares) parameters via vectorized eigenvalue decomposition.
+    
+    For each regression (y_i on x_j), computes the minimum eigenvector of the 2x2 
+    covariance matrix [[var_y, cov_yx], [cov_yx, var_x]] to find the best-fit line
+    that minimizes orthogonal distance (not OLS residuals).
+    
+    FULLY VECTORIZED: No explicit loops. All pairs computed simultaneously on GPU.
+    
+    Returns:
+    - beta: (N, N) matrix of TLS slopes
+    - alpha: (N, N) matrix of TLS intercepts
+    """
+    T, N = data_cp.shape
+    
+    means = data_cp.mean(axis=0)
+    centered = data_cp - means
+    
+    # Build full covariance matrix (N, N)
+    cov = cp.dot(centered.T, centered) / (T - 1)
+    diag_cov = cp.diag(cov)  # (N,) - diagonal variance vector
+    
+    # Broadcasting: For pair (i, j):
+    #   a[i, j] = var(y_i) = cov[i, i]
+    #   b[i, j] = var(x_j) = cov[j, j]
+    #   c[i, j] = cov(y_i, x_j) = cov[i, j]
+    a = diag_cov[:, None]  # (N, 1) broadcasts to (N, N)
+    b = diag_cov[None, :]  # (1, N) broadcasts to (N, N)
+    c = cov  # (N, N)
+    
+    # For 2x2 matrix [[a, c], [c, b]], compute minimum eigenvalue using closed form:
+    # trace = a + b
+    # det = a*b - c^2
+    # lambda_min = (trace - sqrt(trace^2 - 4*det)) / 2
+    #           = (a + b)/2 - sqrt(((a-b)/2)^2 + c^2)
+    
+    trace = a + b
+    srt = cp.sqrt(((a - b) / 2)**2 + c * c)
+    lambda_min = trace / 2 - srt
+    
+    # Eigenvector for lambda_min: [c, lambda_min - a]
+    v0 = c
+    v1 = lambda_min - a
+    
+    # TLS slope: beta = -v0 / v1 (where v = [v0, v1])
+    # Avoid division by zero
+    beta = cp.where(cp.abs(v1) > 1e-10, -v0 / v1, 0.0)
+    
+    # Set diagonal to 1.0 (identity regression)
+    cp.fill_diagonal(beta, 1.0)
+    
+    # Intercept: alpha = mean_y - beta * mean_x
+    alpha = means[:, None] - beta * means[None, :]
+    
+    return beta, alpha
+
 def vectorized_eg_test(data_cp: cp.ndarray) -> cp.ndarray:
     """
     Compute Engle–Granger residual-based ADF t-statistics for all ordered pairs.
+    Uses Total Least Squares (TLS) instead of OLS for cointegration estimation.
 
     Parameters
     ----------
@@ -131,22 +189,8 @@ def vectorized_eg_test(data_cp: cp.ndarray) -> cp.ndarray:
     if T < 10:
         return cp.full((N, N), cp.nan)
 
-    # 1) OLS components via moments: y_i = alpha_ij + beta_ij * x_j
-    means = data_cp.mean(axis=0)
-    data_centered = data_cp - means
-    
-    # Covariance matrix (N, N)
-    cov = cp.dot(data_centered.T, data_centered) / (T - 1)
-    var = cp.diag(cov)
-    
-    # Avoid division by zero
-    var[var == 0] = 1e-10
-    
-    # beta_ij = cov_ij / var_j (for y_i = beta*x_j + alpha)
-    beta = cov / var[None, :]
-    
-    # alpha_ij = mean_i - beta_ij * mean_j
-    alpha = means[:, None] - beta * means[None, :]
+    # 1) TLS parameters via SVD
+    beta, alpha = get_tls_params(data_cp)
     
     t_stats = cp.zeros((N, N), dtype=cp.float32)
     
