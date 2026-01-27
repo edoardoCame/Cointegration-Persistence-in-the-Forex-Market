@@ -7,9 +7,9 @@ This repository hosts a high-performance **Statistical Arbitrage (Pairs Trading)
 
 The system is divided into three logical layers:
 
-1.  **Discovery Layer (`scripts/`)**: Scans the entire universe of currency pairs to find cointegrated relationships using OLS (Ordinary Least Squares) and ADF tests.
-2.  **Validation Layer (`persistence_analysis/`)**: Tests the durability of these relationships. Does a pair that looks good today stay good tomorrow?
-3.  **Execution Layer (`pairs_trading/`)**: A rigorous Walk-Forward backtester that simulates the actual trading strategy with zero lookahead bias.
+1.  **Discovery Layer (`cointegration/scripts/`)**: Scans the entire universe of currency pairs to find cointegrated relationships using OLS (Ordinary Least Squares) and ADF tests.
+2.  **Validation Layer (`cointegration/persistence_analysis/`)**: Tests the durability of these relationships. Does a pair that looks good today stay good tomorrow?
+3.  **Execution Layer (`BB backtest/`)**: A rigorous Walk-Forward backtester that simulates the actual trading strategy with zero lookahead bias.
 
 ## ⚡ Key Technologies
 
@@ -20,8 +20,9 @@ The system is divided into three logical layers:
 ## 📂 Directory Structure
 
 *   `data/`: Raw M1 OHLCV data.
-*   `scripts/`: Core math engines for cointegration discovery.
-*   `pairs_trading/`: Walk-Forward Backtester and Reporting.
-*   `persistence_analysis/`: Research on alpha decay.
-*   `notebooks/`: Interactive visualizations and prototyping.
-*   `results/`: Artifacts, logs, and pickled models.
+*   `cointegration/`: Cointegration analysis and research.
+    *   `scripts/`: Core math engines for cointegration discovery.
+    *   `persistence_analysis/`: Research on alpha decay.
+    *   `notebooks/`: Interactive visualizations and prototyping.
+    *   `results/`: Analysis outputs, pickled models.
+*   `BB backtest/`: Backtesting framework and validation.
