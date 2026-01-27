@@ -146,7 +146,7 @@ def run_portfolio():
     # PATHS
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../data"))
-    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results_portfolio")
+    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results/portfolio")
     os.makedirs(RESULTS_DIR, exist_ok=True)
     
     # --------------------------------------------------------------------------

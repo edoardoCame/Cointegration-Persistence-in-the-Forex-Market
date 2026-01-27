@@ -104,41 +104,34 @@ def wfo_opt_kernel(prices, rsi_matrix, configs, start_idx, end_idx, cost, out_pn
     # We need to access RSI. rsi_matrix has shape (N_LB, total_time)
     
     for i in range(start_idx, end_idx):
-        # Current Price and Next Price logic?
-        # Usually: Signal at Close[i] -> Trade at Open[i+1] (approximated as Close[i+1] diff)
-        # return = (price[i+1] - price[i]) * pos[i]
-        
-        # We need to stop at end_idx - 1 for returns.
-        
         # Check limit for price diff
         if i >= prices.shape[0] - 1:
             break
             
-        rsi_val = rsi_matrix[lb_idx, i]
         price = prices[i]
         next_price = prices[i+1]
         
-        # Logic
-        new_pos = curr_pos
-        if rsi_val > upper:
-            new_pos = 1
-        elif rsi_val < lower:
-            new_pos = -1
-        
-        # Cost Logic
-        # If position changes, we pay cost.
-        if new_pos != curr_pos:
-            # Change Logic:
-            # 0->1: change 1. 1->-1: change 2.
-            # Cost = change * (cost / 2.0)
-            change = abs(new_pos - curr_pos)
-            pnl -= change * (cost / 2.0)
-            curr_pos = new_pos
-            
-        # Return
-        # Holding 'curr_pos' over interval i -> i+1
+        # 1. FIRST: Calculate return with CURRENT (old) position
+        # This is the return from holding position from i to i+1
         step_ret = (next_price - price) * curr_pos
         pnl += step_ret
+        
+        # 2. THEN: Read RSI at next bar to determine new position
+        # Signal at close[i+1] determines position for i+1 -> i+2
+        if i + 1 < prices.shape[0] - 1:
+            rsi_val = rsi_matrix[lb_idx, i + 1]
+            
+            new_pos = curr_pos
+            if rsi_val > upper:
+                new_pos = 1
+            elif rsi_val < lower:
+                new_pos = -1
+            
+            # 3. If position changes, pay transaction cost
+            if new_pos != curr_pos:
+                change = abs(new_pos - curr_pos)
+                pnl -= change * (cost / 2.0)
+                curr_pos = new_pos
         
     out_pnl[cfg_idx] = pnl
 
@@ -266,7 +259,7 @@ def run_wfo():
     # PATHS
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../data"))
-    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results")
+    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results/wfo")
     os.makedirs(RESULTS_DIR, exist_ok=True)
     
     # Generate Configs Grid (Combinations)
@@ -421,28 +414,30 @@ def run_wfo():
             
             n_points = len(price_h)
             
-            for i in range(n_points - 1): # Can't calc return for last point without next price
+            for i in range(n_points - 1):
                 curr_price = price_h[i]
                 next_price = price_h[i+1]
-                rsi_val = rsi_h[i]
                 
-                # Signal Logic
-                new_pos = current_market_pos
-                if rsi_val > best_upper:
-                    new_pos = 1
-                elif rsi_val < best_lower:
-                    new_pos = -1
-                
-                # Cost
-                if new_pos != current_market_pos:
-                    change = abs(new_pos - current_market_pos)
-                    cost = change * (COST_PER_FLIP / 2.0)
-                    week_pnl -= cost
-                    current_market_pos = new_pos
-                
-                # Return
+                # 1. FIRST: Calculate return with current position
                 ret = (next_price - curr_price) * current_market_pos
                 week_pnl += ret
+                
+                # 2. THEN: Update position based on RSI at next bar
+                if i + 1 < n_points:
+                    rsi_val = rsi_h[i + 1]
+                    
+                    new_pos = current_market_pos
+                    if rsi_val > best_upper:
+                        new_pos = 1
+                    elif rsi_val < best_lower:
+                        new_pos = -1
+                    
+                    # 3. If position changes, pay cost
+                    if new_pos != current_market_pos:
+                        change = abs(new_pos - current_market_pos)
+                        cost = change * (COST_PER_FLIP / 2.0)
+                        week_pnl -= cost
+                        current_market_pos = new_pos
                 
             total_cum_pnl += week_pnl
             

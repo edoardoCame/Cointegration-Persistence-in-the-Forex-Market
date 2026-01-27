@@ -165,7 +165,7 @@ def run_monte_carlo():
     # PATHS
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../data"))
-    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results_monte_carlo")
+    RESULTS_DIR = os.path.join(SCRIPT_DIR, "results/monte_carlo")
     os.makedirs(RESULTS_DIR, exist_ok=True)
     
     # --------------------------------------------------------------------------
