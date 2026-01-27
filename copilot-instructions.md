@@ -1,0 +1,1 @@
+usa sempre rapids-23.12 e la gpu per le computazioni. è un conda env!
